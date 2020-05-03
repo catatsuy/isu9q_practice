@@ -66,8 +66,9 @@ var (
 	dbx       *sqlx.DB
 	store     sessions.Store
 
-	CacheCategories map[int]Category
-	CacheUsers      *UserCache
+	CacheCategories    map[int]Category
+	CacheAllCategories []Category
+	CacheUsers         *UserCache
 
 	PaymentServiceURL  string
 	ShipmentServiceURL string
@@ -553,6 +554,7 @@ func genCache() error {
 	for _, c := range categories {
 		CacheCategories[c.ID] = c
 	}
+	CacheAllCategories = categories
 
 	CacheUsers = NewUserCache()
 	users := make([]User, 0, 4000)
@@ -2228,15 +2230,7 @@ func getSettings(w http.ResponseWriter, r *http.Request) {
 
 	ress.PaymentServiceURL = getPaymentServiceURL()
 
-	categories := []Category{}
-
-	err := dbx.Select(&categories, "SELECT * FROM `categories`")
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
-	}
-	ress.Categories = categories
+	ress.Categories = CacheAllCategories
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	json.NewEncoder(w).Encode(ress)
