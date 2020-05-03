@@ -67,6 +67,7 @@ var (
 	store     sessions.Store
 
 	CacheCategories map[int]Category
+	CacheUsers      *UserCache
 )
 
 type Config struct {
@@ -110,6 +111,12 @@ func (c *UserCache) Set(key int64, numSellItems int, lastBump time.Time) {
 	u.NumSellItems = numSellItems
 	u.LastBump = lastBump
 	c.items[key] = u
+	c.Unlock()
+}
+
+func (c *UserCache) SetUser(u User) {
+	c.Lock()
+	c.items[u.ID] = u
 	c.Unlock()
 }
 
@@ -424,28 +431,24 @@ func getUser(r *http.Request) (user User, errCode int, errMsg string) {
 		return user, http.StatusNotFound, "no session"
 	}
 
-	err := dbx.Get(&user, "SELECT * FROM `users` WHERE `id` = ?", userID)
-	if err == sql.ErrNoRows {
+	user, ok = CacheUsers.Get(userID.(int64))
+	if !ok {
 		return user, http.StatusNotFound, "user not found"
-	}
-	if err != nil {
-		log.Print(err)
-		return user, http.StatusInternalServerError, "db error"
 	}
 
 	return user, http.StatusOK, ""
 }
 
 func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err error) {
-	user := User{}
-	err = sqlx.Get(q, &user, "SELECT * FROM `users` WHERE `id` = ?", userID)
-	if err != nil {
-		return userSimple, err
+	user, ok := CacheUsers.Get(userID)
+	if !ok {
+		return UserSimple{}, fmt.Errorf("user not found")
 	}
+
 	userSimple.ID = user.ID
 	userSimple.AccountName = user.AccountName
 	userSimple.NumSellItems = user.NumSellItems
-	return userSimple, err
+	return userSimple, nil
 }
 
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
@@ -564,6 +567,16 @@ func genCache() error {
 	}
 	for _, c := range categories {
 		CacheCategories[c.ID] = c
+	}
+
+	CacheUsers = NewUserCache()
+	users := make([]User, 0, 4000)
+	err = dbx.Select(&users, "SELECT * FROM `users`")
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		CacheUsers.SetUser(u)
 	}
 
 	return nil
@@ -2097,6 +2110,7 @@ func postSell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tx.Commit()
+	CacheUsers.Set(seller.ID, seller.NumSellItems+1, now)
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	json.NewEncoder(w).Encode(resSell{ID: itemID})
