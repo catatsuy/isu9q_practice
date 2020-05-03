@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -87,6 +88,36 @@ type UserSimple struct {
 	ID           int64  `json:"id"`
 	AccountName  string `json:"account_name"`
 	NumSellItems int    `json:"num_sell_items"`
+}
+
+type UserCache struct {
+	// Setが多いならsync.Mutex
+	sync.RWMutex
+	items map[int64]User
+}
+
+func NewUserCache() *UserCache {
+	m := make(map[int64]User)
+	c := &UserCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *UserCache) Set(key int64, numSellItems int, lastBump time.Time) {
+	c.Lock()
+	u := c.items[key]
+	u.NumSellItems = numSellItems
+	u.LastBump = lastBump
+	c.items[key] = u
+	c.Unlock()
+}
+
+func (c *UserCache) Get(key int64) (User, bool) {
+	c.RLock()
+	v, found := c.items[key]
+	c.RUnlock()
+	return v, found
 }
 
 type Item struct {
@@ -331,6 +362,7 @@ func main() {
 	mux := goji.NewMux()
 
 	// API
+	mux.HandleFunc(pat.Get("/gen_cache"), getGenCache)
 	mux.HandleFunc(pat.Post("/initialize"), postInitialize)
 	mux.HandleFunc(pat.Get("/new_items.json"), getNewItems)
 	mux.HandleFunc(pat.Get("/new_items/:root_category_id.json"), getNewCategoryItems)
@@ -504,17 +536,11 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	CacheCategories = make(map[int]Category)
-
-	categories := []Category{}
-	err = dbx.Select(&categories, "SELECT * FROM `categories`")
+	err = genCache()
 	if err != nil {
 		log.Print(err)
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		return
-	}
-	for _, c := range categories {
-		CacheCategories[c.ID] = c
 	}
 
 	res := resInitialize{
@@ -526,6 +552,31 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	json.NewEncoder(w).Encode(res)
+}
+
+func genCache() error {
+	CacheCategories = make(map[int]Category)
+
+	categories := []Category{}
+	err := dbx.Select(&categories, "SELECT * FROM `categories`")
+	if err != nil {
+		return err
+	}
+	for _, c := range categories {
+		CacheCategories[c.ID] = c
+	}
+
+	return nil
+}
+
+func getGenCache(w http.ResponseWriter, r *http.Request) {
+	err := genCache()
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	return
 }
 
 func getNewItems(w http.ResponseWriter, r *http.Request) {
