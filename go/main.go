@@ -68,6 +68,9 @@ var (
 
 	CacheCategories map[int]Category
 	CacheUsers      *UserCache
+
+	PaymentServiceURL  string
+	ShipmentServiceURL string
 )
 
 type Config struct {
@@ -481,7 +484,7 @@ func getConfigByName(name string) (string, error) {
 }
 
 func getPaymentServiceURL() string {
-	val, _ := getConfigByName("payment_service_url")
+	val := PaymentServiceURL
 	if val == "" {
 		return DefaultPaymentServiceURL
 	}
@@ -489,7 +492,7 @@ func getPaymentServiceURL() string {
 }
 
 func getShipmentServiceURL() string {
-	val, _ := getConfigByName("shipment_service_url")
+	val := ShipmentServiceURL
 	if val == "" {
 		return DefaultShipmentServiceURL
 	}
@@ -518,26 +521,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = dbx.Exec(
-		"INSERT INTO `configs` (`name`, `val`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `val` = VALUES(`val`)",
-		"payment_service_url",
-		ri.PaymentServiceURL,
-	)
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
-	}
-	_, err = dbx.Exec(
-		"INSERT INTO `configs` (`name`, `val`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `val` = VALUES(`val`)",
-		"shipment_service_url",
-		ri.ShipmentServiceURL,
-	)
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
-		return
-	}
+	PaymentServiceURL = ri.PaymentServiceURL
+	ShipmentServiceURL = ri.ShipmentServiceURL
 
 	err = genCache()
 	if err != nil {
