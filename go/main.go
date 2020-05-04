@@ -372,6 +372,8 @@ func main() {
 	}
 	defer dbx.Close()
 
+	genCache()
+
 	mux := goji.NewMux()
 
 	// API
