@@ -19,7 +19,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/walf443/go-sql-tracer"
+	proxy "github.com/shogo82148/go-sql-proxy"
 	goji "goji.io"
 	"goji.io/pat"
 	"golang.org/x/crypto/bcrypt"
@@ -350,7 +350,7 @@ func main() {
 	}
 
 	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
+		"%s:%s@tcp(%s:%s)/%s?interpolateParams=true&charset=utf8mb4&parseTime=true&loc=Local",
 		user,
 		password,
 		host,
@@ -361,6 +361,8 @@ func main() {
 	isDev := os.Getenv("IS_DEV")
 
 	if isDev == "1" {
+		proxy.RegisterTracer()
+
 		dbx, err = sqlx.Open("mysql:trace", dsn)
 	} else {
 		dbx, err = sqlx.Open("mysql", dsn)
