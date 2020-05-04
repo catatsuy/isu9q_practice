@@ -69,9 +69,7 @@ var (
 	CacheCategories    map[int]Category
 	CacheAllCategories []Category
 	CacheUsers         *UserCache
-
-	PaymentServiceURL  string
-	ShipmentServiceURL string
+	CacheConfig        *configCache
 )
 
 type Config struct {
@@ -129,6 +127,47 @@ func (c *UserCache) Get(key int64) (User, bool) {
 	v, found := c.items[key]
 	c.RUnlock()
 	return v, found
+}
+
+type configValue struct {
+	value  string
+	expire time.Time
+}
+
+type configCache struct {
+	sync.RWMutex
+	items map[string]configValue
+}
+
+func NewConfigCache() *configCache {
+	m := make(map[string]configValue)
+	c := &configCache{
+		items: m,
+	}
+	return c
+}
+
+func (c *configCache) Set(key string, value string) {
+	defer c.Unlock()
+	val := configValue{
+		value:  value,
+		expire: time.Now().Add(80 * time.Second),
+	}
+	c.Lock()
+	c.items[key] = val
+}
+
+func (c *configCache) Get(key string) (string, bool) {
+	defer c.RUnlock()
+	c.RLock()
+	v, found := c.items[key]
+	if !found {
+		return "", false
+	}
+	if time.Now().After(v.expire) {
+		return "", false
+	}
+	return v.value, found
 }
 
 type Item struct {
@@ -489,18 +528,30 @@ func getConfigByName(name string) (string, error) {
 }
 
 func getPaymentServiceURL() string {
-	val := PaymentServiceURL
+	key := "payment_service_url"
+	val, ok := CacheConfig.Get(key)
+	if ok {
+		return val
+	}
+	val, _ = getConfigByName(key)
 	if val == "" {
 		return DefaultPaymentServiceURL
 	}
+	CacheConfig.Set(key, val)
 	return val
 }
 
 func getShipmentServiceURL() string {
-	val := ShipmentServiceURL
+	key := "shipment_service_url"
+	val, ok := CacheConfig.Get(key)
+	if ok {
+		return val
+	}
+	val, _ = getConfigByName(key)
 	if val == "" {
 		return DefaultShipmentServiceURL
 	}
+	CacheConfig.Set(key, val)
 	return val
 }
 
@@ -526,8 +577,26 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	PaymentServiceURL = ri.PaymentServiceURL
-	ShipmentServiceURL = ri.ShipmentServiceURL
+	_, err = dbx.Exec(
+		"INSERT INTO `configs` (`name`, `val`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `val` = VALUES(`val`)",
+		"payment_service_url",
+		ri.PaymentServiceURL,
+	)
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	_, err = dbx.Exec(
+		"INSERT INTO `configs` (`name`, `val`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `val` = VALUES(`val`)",
+		"shipment_service_url",
+		ri.ShipmentServiceURL,
+	)
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
 
 	err = genCache()
 	if err != nil {
@@ -569,6 +638,8 @@ func genCache() error {
 	for _, u := range users {
 		CacheUsers.SetUser(u)
 	}
+
+	CacheConfig = NewConfigCache()
 
 	return nil
 }
