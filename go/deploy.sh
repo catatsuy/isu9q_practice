@@ -1,5 +1,5 @@
 #!/bin/bash
 
-set -x
+set -x -e
 
 ./deploy_body.sh | notify_slack

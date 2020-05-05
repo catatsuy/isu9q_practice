@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x
+set -x -e
 
 echo "start deploy ${USER}"
 GOOS=linux go build -o isucari
