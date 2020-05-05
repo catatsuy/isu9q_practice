@@ -1427,9 +1427,50 @@ func postBuy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	targetItem := Item{}
+	err = dbx.Get(&targetItem, "SELECT * FROM `items` WHERE `id` = ?", rb.ItemID)
+	if err == sql.ErrNoRows {
+		outputErrorMsg(w, http.StatusNotFound, "item not found")
+		return
+	}
+	if err != nil {
+		log.Print(err)
+
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	if targetItem.Status != ItemStatusOnSale {
+		outputErrorMsg(w, http.StatusForbidden, "item is not for sale")
+		return
+	}
+
+	if targetItem.SellerID == buyer.ID {
+		outputErrorMsg(w, http.StatusForbidden, "自分の商品は買えません")
+		return
+	}
+
+	seller, ok := CacheUsers.Get(targetItem.SellerID)
+	if !ok {
+		outputErrorMsg(w, http.StatusNotFound, "seller not found")
+		return
+	}
+
+	scr, err := APIShipmentCreate(getShipmentServiceURL(), &APIShipmentCreateReq{
+		ToAddress:   buyer.Address,
+		ToName:      buyer.AccountName,
+		FromAddress: seller.Address,
+		FromName:    seller.AccountName,
+	})
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
+
+		return
+	}
+
 	tx := dbx.MustBegin()
 
-	targetItem := Item{}
 	err = tx.Get(&targetItem, "SELECT * FROM `items` WHERE `id` = ? FOR UPDATE", rb.ItemID)
 	if err == sql.ErrNoRows {
 		outputErrorMsg(w, http.StatusNotFound, "item not found")
@@ -1452,21 +1493,6 @@ func postBuy(w http.ResponseWriter, r *http.Request) {
 
 	if targetItem.SellerID == buyer.ID {
 		outputErrorMsg(w, http.StatusForbidden, "自分の商品は買えません")
-		tx.Rollback()
-		return
-	}
-
-	seller := User{}
-	err = tx.Get(&seller, "SELECT * FROM `users` WHERE `id` = ? FOR UPDATE", targetItem.SellerID)
-	if err == sql.ErrNoRows {
-		outputErrorMsg(w, http.StatusNotFound, "seller not found")
-		tx.Rollback()
-		return
-	}
-	if err != nil {
-		log.Print(err)
-
-		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		tx.Rollback()
 		return
 	}
@@ -1519,20 +1545,6 @@ func postBuy(w http.ResponseWriter, r *http.Request) {
 
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		tx.Rollback()
-		return
-	}
-
-	scr, err := APIShipmentCreate(getShipmentServiceURL(), &APIShipmentCreateReq{
-		ToAddress:   buyer.Address,
-		ToName:      buyer.AccountName,
-		FromAddress: seller.Address,
-		FromName:    seller.AccountName,
-	})
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
-		tx.Rollback()
-
 		return
 	}
 
