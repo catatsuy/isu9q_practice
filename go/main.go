@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -1169,6 +1170,42 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	idsStr := make([]string, 0, len(items))
+	for _, i := range items {
+		idsStr = append(idsStr, strconv.FormatInt(i.ID, 10))
+	}
+	transactionEvidences := make([]TransactionEvidence, 0, len(items))
+	err = dbx.Select(&transactionEvidences, "SELECT * FROM `transaction_evidences` WHERE `item_id` IN ("+strings.Join(idsStr, ",")+")")
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	transactionEvidenceMap := make(map[int64]TransactionEvidence)
+	for _, t := range transactionEvidences {
+		transactionEvidenceMap[t.ItemID] = t
+	}
+
+	teIDsStr := make([]string, 0, len(transactionEvidences))
+	for _, te := range transactionEvidences {
+		teIDsStr = append(teIDsStr, strconv.FormatInt(te.ID, 10))
+	}
+	shippings := make([]Shipping, 0, len(transactionEvidences))
+	if len(transactionEvidences) > 0 {
+		err = dbx.Select(&shippings, "SELECT * FROM `shippings` WHERE `transaction_evidence_id` IN ("+strings.Join(teIDsStr, ",")+")")
+		if err != nil {
+			log.Print(err)
+			outputErrorMsg(w, http.StatusInternalServerError, "db error")
+			return
+		}
+	}
+
+	shippingMap := make(map[int64]Shipping)
+	for _, s := range shippings {
+		shippingMap[s.TransactionEvidenceID] = s
+	}
+
 	itemDetails := []ItemDetail{}
 	for _, item := range items {
 		seller, err := getUserSimpleByID(dbx, item.SellerID)
@@ -1211,19 +1248,11 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 			itemDetail.Buyer = &buyer
 		}
 
-		transactionEvidence := TransactionEvidence{}
-		err = dbx.Get(&transactionEvidence, "SELECT * FROM `transaction_evidences` WHERE `item_id` = ?", item.ID)
-		if err != nil && err != sql.ErrNoRows {
-			// It's able to ignore ErrNoRows
-			log.Print(err)
-			outputErrorMsg(w, http.StatusInternalServerError, "db error")
-			return
-		}
+		transactionEvidence := transactionEvidenceMap[item.ID]
 
 		if transactionEvidence.ID > 0 {
-			shipping := Shipping{}
-			err = dbx.Get(&shipping, "SELECT * FROM `shippings` WHERE `transaction_evidence_id` = ?", transactionEvidence.ID)
-			if err == sql.ErrNoRows {
+			shipping := shippingMap[transactionEvidence.ID]
+			if shipping.Status == "" {
 				outputErrorMsg(w, http.StatusNotFound, "shipping not found")
 				return
 			}
