@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
 	measure "github.com/najeira/measure"
+	"github.com/pkg/profile"
 	proxy "github.com/shogo82148/go-sql-proxy"
 	goji "goji.io"
 	"goji.io/pat"
@@ -72,6 +73,8 @@ var (
 	CacheAllCategories []Category
 	CacheUsers         *UserCache
 	CacheConfig        *configCache
+
+	profileProfile interface{ Stop() }
 )
 
 type Config struct {
@@ -389,6 +392,8 @@ func init() {
 	templates = template.Must(template.ParseFiles(
 		"../public/index.html",
 	))
+
+	profileProfile = profile.Start(profile.MemProfile, profile.ProfilePath("/home/isucon/profile"))
 }
 
 func main() {
@@ -461,6 +466,7 @@ func main() {
 	// API
 	mux.HandleFunc(pat.Get("/gen_cache"), getGenCache)
 	mux.HandleFunc(pat.Get("/report_measure"), getReportMeasure)
+	mux.HandleFunc(pat.Get("/profile_stop"), getProfileStop)
 	mux.HandleFunc(pat.Post("/initialize"), postInitialize)
 	mux.HandleFunc(pat.Get("/new_items.json"), getNewItems)
 	mux.HandleFunc(pat.Get("/new_items/:root_category_id.json"), getNewCategoryItems)
@@ -757,6 +763,10 @@ func getReportMeasure(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%s\t%d\t%f\t%f\t%f\t%f\t%f\t%f\n",
 			s.Key, s.Count, s.Sum, s.Min, s.Max, s.Avg, s.Rate, s.P95)
 	}
+}
+
+func getProfileStop(w http.ResponseWriter, r *http.Request) {
+	profileProfile.Stop()
 }
 
 func getNewItems(w http.ResponseWriter, r *http.Request) {
