@@ -393,7 +393,7 @@ func init() {
 		"../public/index.html",
 	))
 
-	profileProfile = profile.Start(profile.MemProfile, profile.ProfilePath("/home/isucon/profile"))
+	profileProfile = profile.Start(profile.ProfilePath("/home/isucon/profile"))
 }
 
 func main() {
@@ -796,7 +796,7 @@ func getNewItems(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items := []Item{}
+	items := make([]Item, 0, 50)
 	if itemID > 0 && createdAt > 0 {
 		// paging
 		err := dbx.Select(&items,
@@ -951,7 +951,7 @@ func getNewCategoryItems(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items := []Item{}
+	items := make([]Item, 0, 50)
 	err = dbx.Select(&items, inQuery, inArgs...)
 
 	if err != nil {
@@ -1043,7 +1043,7 @@ func getUserItems(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items := []Item{}
+	items := make([]Item, 0, 50)
 	if itemID > 0 && createdAt > 0 {
 		// paging
 		err := dbx.Select(&items,
@@ -1149,7 +1149,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	items := []Item{}
+	items := make([]Item, 0, 50)
 	if itemID > 0 && createdAt > 0 {
 		// paging
 		err := dbx.Select(&items,
