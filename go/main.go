@@ -1817,6 +1817,28 @@ func postShip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	shipping := Shipping{}
+	err = dbx.Get(&shipping, "SELECT * FROM `shippings` WHERE `transaction_evidence_id` = ?", transactionEvidence.ID)
+	if err == sql.ErrNoRows {
+		outputErrorMsg(w, http.StatusNotFound, "shippings not found")
+		return
+	}
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	img, err := APIShipmentRequest(getShipmentServiceURL(), &APIShipmentRequestReq{
+		ReserveID: shipping.ReserveID,
+	})
+	if err != nil {
+		log.Print(err)
+		outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
+
+		return
+	}
+
 	tx := dbx.MustBegin()
 
 	item := Item{}
@@ -1858,7 +1880,6 @@ func postShip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shipping := Shipping{}
 	err = tx.Get(&shipping, "SELECT * FROM `shippings` WHERE `transaction_evidence_id` = ? FOR UPDATE", transactionEvidence.ID)
 	if err == sql.ErrNoRows {
 		outputErrorMsg(w, http.StatusNotFound, "shippings not found")
@@ -1869,17 +1890,6 @@ func postShip(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		tx.Rollback()
-		return
-	}
-
-	img, err := APIShipmentRequest(getShipmentServiceURL(), &APIShipmentRequestReq{
-		ReserveID: shipping.ReserveID,
-	})
-	if err != nil {
-		log.Print(err)
-		outputErrorMsg(w, http.StatusInternalServerError, "failed to request to shipment service")
-		tx.Rollback()
-
 		return
 	}
 
