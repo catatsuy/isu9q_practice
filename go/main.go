@@ -443,6 +443,17 @@ func main() {
 	}
 	defer dbx.Close()
 
+	maxConns := os.Getenv("DB_MAXOPENCONNS")
+	maxConnsInt := 30
+	if maxConns != "" {
+		maxConnsInt, err = strconv.Atoi(maxConns)
+		if err != nil {
+			panic(err)
+		}
+	}
+	dbx.SetMaxOpenConns(maxConnsInt)
+	dbx.SetMaxIdleConns(maxConnsInt)
+
 	genCache()
 
 	mux := goji.NewMux()
